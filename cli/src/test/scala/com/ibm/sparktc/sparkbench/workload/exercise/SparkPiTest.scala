@@ -18,6 +18,7 @@
 package com.ibm.sparktc.sparkbench.workload.exercise
 
 import com.ibm.sparktc.sparkbench.testfixtures.SparkSessionProvider
+import com.ibm.sparktc.sparkbench.workload.rdd.SparkPi
 import org.scalatest.{BeforeAndAfterEach, FlatSpec, Matchers}
 
 class SparkPiTest extends FlatSpec with Matchers with BeforeAndAfterEach {

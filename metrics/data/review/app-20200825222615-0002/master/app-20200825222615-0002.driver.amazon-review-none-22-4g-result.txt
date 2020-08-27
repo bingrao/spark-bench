@@ -1,0 +1,2 @@
+AppName: amazon-review-none-22-4g, Runtime: 504982
+RDD Hit	0	RDD Miss	0	Disk Read	0

@@ -21,7 +21,7 @@ import com.ibm.sparktc.sparkbench.utils.{SaveModes, SparkBenchException}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import com.ibm.sparktc.sparkbench.utils.SparkFuncs._
 
-trait WorkloadDefaults {
+trait WorkloadDefaults extends {
   val name: String
   def apply(m: Map[String, Any]): Workload
 }

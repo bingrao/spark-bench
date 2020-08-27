@@ -54,24 +54,77 @@ object KMeansWorkload extends WorkloadDefaults {
 
   // Params for workload, in addition to some stuff up there ^^
   val maxIteration: Int = 2
-  val seed: Long = 127L
+  val seed_default: Long = 127L
 
-  def apply(m: Map[String, Any]): KMeansWorkload = new KMeansWorkload(
-    input = Some(getOrThrow(m, "input").asInstanceOf[String]),
-    output = getOrDefault[Option[String]](m, "workloadresultsoutputdir", None),
-    saveMode = getOrDefault[String](m, "save-mode", SaveModes.error),
-    k = getOrDefault[Int](m, "k", numOfClusters),
-    seed = getOrDefault(m, "seed", seed, any2Long),
-    maxIterations = getOrDefault[Int](m, "maxiterations", maxIteration))
 
+  def apply(m: Map[String, Any]): Workload = {
+    val input = Some(getOrThrow(m, "input").asInstanceOf[String])
+    val output = getOrDefault[Option[String]](m, "workloadresultsoutputdir", None)
+    val saveMode = getOrDefault[String](m, "save-mode", SaveModes.error)
+    val k = getOrDefault[Int](m, "k", numOfClusters)
+    val seed = getOrDefault(m, "seed", seed_default, any2Long)
+    val maxIterations = getOrDefault[Int](m, "maxiterations", maxIteration)
+    val cachePolicy = m.get("cache").map(_.asInstanceOf[String])
+
+    cachePolicy.get match {
+      case "All" =>  {
+        println("##################  All ###############################\n")
+        KMeansWorkload_All(
+          input = input,
+          output = output,
+          saveMode = saveMode,
+          k = k,
+          seed = seed,
+          maxIterations = maxIterations,
+          cachePolicy = cachePolicy
+        )
+      }
+      case "SODA" => {
+        println("##################  SODA ###############################\n")
+        KMeansWorkload_SODA(
+          input = input,
+          output = output,
+          saveMode = saveMode,
+          k = k,
+          seed = seed,
+          maxIterations = maxIterations,
+          cachePolicy = cachePolicy
+        )
+      }
+      case "None" => {
+        println("##################  None ###############################\n")
+        KMeansWorkload_None(
+          input = input,
+          output = output,
+          saveMode = saveMode,
+          k = k,
+          seed = seed,
+          maxIterations = maxIterations,
+          cachePolicy = cachePolicy
+        )
+      }
+      case _ => {
+        KMeansWorkload_None(
+          input = input,
+          output = output,
+          saveMode = saveMode,
+          k = k,
+          seed = seed,
+          maxIterations = maxIterations,
+          cachePolicy = cachePolicy
+        )
+      }
+    }
+  }
 }
 
-case class KMeansWorkload(input: Option[String],
+case class KMeansWorkload_All(input: Option[String],
                           output: Option[String],
                           saveMode: String,
                           k: Int,
                           seed: Long,
-                          maxIterations: Int) extends Workload {
+                          maxIterations: Int,
+                          cachePolicy: Option[String]) extends Workload {
 
   override def doWorkload(df: Option[DataFrame], spark: SparkSession): DataFrame = {
     val timestamp = System.currentTimeMillis()
@@ -141,7 +194,166 @@ case class KMeansWorkload(input: Option[String],
       // Already performed the match one level up so these are guaranteed to be Some(something)
       writeToDisk(output.get, saveMode, vectorsAndClusterIdx.toDF(), spark = spark)
     }
-    ds.unpersist()
+    duration
+  }
+}
+
+case class KMeansWorkload_SODA(input: Option[String],
+                          output: Option[String],
+                          saveMode: String,
+                          k: Int,
+                          seed: Long,
+                          maxIterations: Int,
+                          cachePolicy: Option[String]) extends Workload {
+
+  override def doWorkload(df: Option[DataFrame], spark: SparkSession): DataFrame = {
+    val timestamp = System.currentTimeMillis()
+
+    val (loadtime, data) = loadToCache(df.get, spark) // Should fail loudly if df == None
+    val (trainTime, model) = train(data, spark)
+    val (testTime, _) = test(model, data, spark)
+    val saveTime = output.foldLeft(0L) { case (_, _) => save(data, model, spark) }
+    val total = loadtime + trainTime + testTime + saveTime
+
+    val schema = StructType(
+      List(
+        StructField("name", StringType, nullable = false),
+        StructField("timestamp", LongType, nullable = false),
+        StructField("load", LongType, nullable = true),
+        StructField("train", LongType, nullable = true),
+        StructField("test", LongType, nullable = true),
+        StructField("save", LongType, nullable = true),
+        StructField("total_runtime", LongType, nullable = false)
+      )
+    )
+
+    val timeList = spark.sparkContext.parallelize(Seq(Row("kmeans", timestamp, loadtime, trainTime, testTime, saveTime, total)))
+
+    spark.createDataFrame(timeList, schema)
+  }
+
+  def loadToCache(df: DataFrame, spark: SparkSession): (Long, RDD[Vector]) = {
+    time {
+      val baseDS: RDD[Vector] = df.rdd.map(
+        row => {
+          val range = 0 until row.size
+          val doublez: Array[Double] = range.map(i => {
+            val x = row.getDouble(i)
+            x
+          }).toArray
+          Vectors.dense(doublez)
+        }
+      )
+      baseDS.cache()
+    }
+  }
+
+  def train(df: RDD[Vector], spark: SparkSession): (Long, KMeansModel) = {
+    time {
+      KMeans.train(
+        data = df,
+        k = k,
+        maxIterations = maxIterations,
+        initializationMode = KMeans.K_MEANS_PARALLEL,
+        seed = seed)
+    }
+  }
+
+  //Within Sum of Squared Errors
+  def test(model: KMeansModel, df: RDD[Vector], spark: SparkSession): (Long, Double) = time {
+    model.computeCost(df)
+  }
+
+  def save(ds: RDD[Vector], model: KMeansModel, spark: SparkSession): Long = {
+    val (duration, _) = time {
+      val vectorsAndClusterIdx: RDD[(String, Int)] = ds.map { point =>
+        val prediction = model.predict(point)
+        (point.toString, prediction)
+      }
+      import spark.implicits._
+      // Already performed the match one level up so these are guaranteed to be Some(something)
+      writeToDisk(output.get, saveMode, vectorsAndClusterIdx.toDF(), spark = spark)
+    }
+    duration
+  }
+}
+
+case class KMeansWorkload_None(input: Option[String],
+                          output: Option[String],
+                          saveMode: String,
+                          k: Int,
+                          seed: Long,
+                          maxIterations: Int,
+                          cachePolicy: Option[String]) extends Workload {
+
+  override def doWorkload(df: Option[DataFrame], spark: SparkSession): DataFrame = {
+    val timestamp = System.currentTimeMillis()
+
+    val (loadtime, data) = loadToCache(df.get, spark) // Should fail loudly if df == None
+    val (trainTime, model) = train(data, spark)
+    val (testTime, _) = test(model, data, spark)
+    val saveTime = output.foldLeft(0L) { case (_, _) => save(data, model, spark) }
+    val total = loadtime + trainTime + testTime + saveTime
+
+    val schema = StructType(
+      List(
+        StructField("name", StringType, nullable = false),
+        StructField("timestamp", LongType, nullable = false),
+        StructField("load", LongType, nullable = true),
+        StructField("train", LongType, nullable = true),
+        StructField("test", LongType, nullable = true),
+        StructField("save", LongType, nullable = true),
+        StructField("total_runtime", LongType, nullable = false)
+      )
+    )
+
+    val timeList = spark.sparkContext.parallelize(Seq(Row("kmeans", timestamp, loadtime, trainTime, testTime, saveTime, total)))
+
+    spark.createDataFrame(timeList, schema)
+  }
+
+  def loadToCache(df: DataFrame, spark: SparkSession): (Long, RDD[Vector]) = {
+    time {
+      val baseDS: RDD[Vector] = df.rdd.map(
+        row => {
+          val range = 0 until row.size
+          val doublez: Array[Double] = range.map(i => {
+            val x = row.getDouble(i)
+            x
+          }).toArray
+          Vectors.dense(doublez)
+        }
+      )
+      baseDS
+    }
+  }
+
+  def train(df: RDD[Vector], spark: SparkSession): (Long, KMeansModel) = {
+    time {
+      KMeans.train(
+        data = df,
+        k = k,
+        maxIterations = maxIterations,
+        initializationMode = KMeans.K_MEANS_PARALLEL,
+        seed = seed)
+    }
+  }
+
+  //Within Sum of Squared Errors
+  def test(model: KMeansModel, df: RDD[Vector], spark: SparkSession): (Long, Double) = time {
+    model.computeCost(df)
+  }
+
+  def save(ds: RDD[Vector], model: KMeansModel, spark: SparkSession): Long = {
+    val (duration, _) = time {
+      val vectorsAndClusterIdx: RDD[(String, Int)] = ds.map { point =>
+        val prediction = model.predict(point)
+        (point.toString, prediction)
+      }
+      import spark.implicits._
+      // Already performed the match one level up so these are guaranteed to be Some(something)
+      writeToDisk(output.get, saveMode, vectorsAndClusterIdx.toDF(), spark = spark)
+    }
     duration
   }
 }

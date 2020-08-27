@@ -1,0 +1,2 @@
+AppName: kmeans-run-none-10-4g, Runtime: 129079
+RDD Hit	2260	RDD Miss	60	Disk Read	0

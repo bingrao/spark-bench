@@ -30,7 +30,7 @@ import org.apache.spark.sql.types._
 
 object KMeansDataGen extends WorkloadDefaults {
   val name = "data-generation-kmeans"
-  override def apply(m: Map[String, Any]) = new KMeansDataGen(
+  override def apply(m: Map[String, Any]): KMeansDataGen = new KMeansDataGen(
     numRows = getOrThrow(m, "rows").asInstanceOf[Int],
     numCols = getOrThrow(m, "cols").asInstanceOf[Int],
     output = Some(getOrThrow(m, "output").asInstanceOf[String]),

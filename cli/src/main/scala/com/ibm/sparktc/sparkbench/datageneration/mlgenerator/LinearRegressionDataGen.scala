@@ -17,7 +17,9 @@
 
 package com.ibm.sparktc.sparkbench.datageneration.mlgenerator
 
-import org.apache.spark.mllib.util.LinearDataGenerator
+//import org.apache.spark.mllib.util.LinearDataGenerator
+import org.apache.spark.mllib.util.LogisticRegressionDataGenerator
+
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -36,7 +38,7 @@ object LinearRegressionDataGen extends WorkloadDefaults {
   val intercepts: Double = 0.1
   val numOfPartitions: Int = 10
   val maxIteration: Int = 3
-  override def apply(m: Map[String, Any]) = new LinearRegressionDataGen(
+  override def apply(m: Map[String, Any]): LinearRegressionDataGen = new LinearRegressionDataGen(
     numRows = getOrThrow(m, "rows").asInstanceOf[Int],
     numCols = getOrThrow(m, "cols").asInstanceOf[Int],
     output = Some(getOrThrow(m, "output").asInstanceOf[String]),
@@ -63,7 +65,7 @@ case class LinearRegressionDataGen (
     val timestamp = System.currentTimeMillis()
 
     val (generateTime, data): (Long, RDD[LabeledPoint]) = time {
-      LinearDataGenerator.generateLinearRDD(
+      LogisticRegressionDataGenerator.generateLogisticRDD(
         spark.sparkContext,
         numRows,
         numCols,

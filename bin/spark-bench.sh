@@ -32,6 +32,8 @@ else
     exit 1
 fi
 
+LogPath=${basedir}/logs; [ -d "$LogPath" ] || mkdir -p "$LogPath"
+
 [[ -f "$bin/spark-bench-env.sh" ]] && source "$bin/spark-bench-env.sh"
 
 mainclass="com.ibm.sparktc.sparkbench.sparklaunch.SparkLaunch"
@@ -58,5 +60,5 @@ if [ $# -ne 1 ]
     esac
 
     java -cp "$launchjar" "$mainclass" "$@"
-
+    ${bin}/getLogs.sh ${LogPath}
 fi

@@ -1,0 +1,2 @@
+AppName: amazon-review-soda-22-4g, Runtime: 428443
+RDD Hit	609	RDD Miss	203	Disk Read	0

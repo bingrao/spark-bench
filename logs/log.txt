@@ -1,0 +1,16 @@
+[INFO] 2020-08-26 11:00:30 > Workload: kmeans
+[INFO] 2020-08-26 11:00:30 > |- Application: app-20200825223653-0003
+[INFO] 2020-08-26 11:00:31 > |- Application: app-20200825224001-0004
+[INFO] 2020-08-26 11:00:31 > |- Application: app-20200825224313-0005
+[INFO] 2020-08-26 11:00:31 > Workload: logisticRegression
+[INFO] 2020-08-26 11:00:31 > |- Application: app-20200825231749-0009
+[INFO] 2020-08-26 11:00:31 > |- Application: app-20200825232819-0010
+[INFO] 2020-08-26 11:00:32 > |- Application: app-20200825233851-0011
+[INFO] 2020-08-26 11:00:32 > Workload: pagerank
+[INFO] 2020-08-26 11:00:32 > |- Application: app-20200826101609-0000
+[INFO] 2020-08-26 11:00:33 > |- Application: app-20200826102449-0001
+[INFO] 2020-08-26 11:00:33 > |- Application: app-20200826103313-0002
+[INFO] 2020-08-26 11:00:33 > Workload: review
+[INFO] 2020-08-26 11:00:33 > |- Application: app-20200825220936-0000
+[INFO] 2020-08-26 11:00:33 > |- Application: app-20200825221800-0001
+[INFO] 2020-08-26 11:00:34 > |- Application: app-20200825222615-0002

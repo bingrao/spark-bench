@@ -19,10 +19,13 @@ package com.ibm.sparktc.sparkbench.workload
 
 import com.ibm.sparktc.sparkbench.datageneration.GraphDataGen
 import com.ibm.sparktc.sparkbench.datageneration.mlgenerator.{KMeansDataGen, LinearRegressionDataGen}
+import com.ibm.sparktc.sparkbench.datageneration.rdd.ReviewDataGen
 import com.ibm.sparktc.sparkbench.utils.GeneralFunctions.getOrThrowT
 import com.ibm.sparktc.sparkbench.utils.SparkBenchException
 import com.ibm.sparktc.sparkbench.workload.exercise._
 import com.ibm.sparktc.sparkbench.workload.ml.{KMeansWorkload, LogisticRegressionWorkload}
+import com.ibm.sparktc.sparkbench.workload.rdd.{SparkPi, Review, SocialMedia}
+import com.ibm.sparktc.sparkbench.workload.graph.PageRank
 import com.ibm.sparktc.sparkbench.workload.sql.SQLWorkload
 
 object ConfigCreator {
@@ -35,6 +38,10 @@ object ConfigCreator {
     SQLWorkload,
     Sleep,
     SparkPi,
+    Review,
+    ReviewDataGen,
+    SocialMedia,
+    PageRank,
     KMeansDataGen,
     LinearRegressionDataGen,
     GraphDataGen

@@ -1,0 +1,2 @@
+AppName: pagerank-none-8-4g, Runtime: 736975
+RDD Hit	0	RDD Miss	2691	Disk Read	9272

@@ -20,10 +20,11 @@ package com.ibm.sparktc.sparkbench.workload.ml
 import com.ibm.sparktc.sparkbench.utils.GeneralFunctions._
 import com.ibm.sparktc.sparkbench.utils.SaveModes
 import com.ibm.sparktc.sparkbench.workload.{Workload, WorkloadDefaults}
-import org.apache.spark.ml.linalg.Vectors
+import org.apache.spark.ml.linalg.{Vectors}
 import org.apache.spark.ml.classification.LogisticRegression
 import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator => BCE}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.ml.feature.LabeledPoint
 
 // ¯\_(ツ)_/¯
 // the logic for this workload came from:
@@ -48,40 +49,197 @@ case class LogisticRegressionResult(
 
 object LogisticRegressionWorkload extends WorkloadDefaults {
   val name = "lr-bml"
-  def apply(m: Map[String, Any]) = new LogisticRegressionWorkload(
-    input = Some(getOrThrow(m, "input").asInstanceOf[String]),
-    output = getOrDefault[Option[String]](m, "workloadresultsoutputdir", None),
-    saveMode = getOrDefault[String](m, "save-mode", SaveModes.error),
-    testFile = getOrThrow(m, "testfile").asInstanceOf[String],
-    numPartitions = getOrDefault[Int](m, "numpartitions", 32),
-    cacheEnabled = getOrDefault[Boolean](m, "cacheenabled", true)
-  )
+  def apply(m: Map[String, Any]):Workload = {
+
+    val input = Some(getOrThrow(m, "input").asInstanceOf[String])
+    val output = getOrDefault[Option[String]](m, "workloadresultsoutputdir", None)
+    val saveMode = getOrDefault[String](m, "save-mode", SaveModes.error)
+    val testFile = getOrThrow(m, "testfile").asInstanceOf[String]
+    val numPartitions = getOrDefault[Int](m, "numpartitions", -1)
+    val cachePolicy = m.get("cache").map(_.asInstanceOf[String])
+
+    cachePolicy.get match {
+      case "All" =>  {
+        println("##################  All ###############################\n")
+        LogisticRegressionWorkload_All(
+          input = input,
+          output = output,
+          saveMode = saveMode,
+          testFile = testFile,
+          numPartitions = numPartitions,
+          cachePolicy = cachePolicy
+        )
+      }
+      case "SODA" => {
+        println("##################  SODA ###############################\n")
+        LogisticRegressionWorkload_SODA(
+          input = input,
+          output = output,
+          saveMode = saveMode,
+          testFile = testFile,
+          numPartitions = numPartitions,
+          cachePolicy = cachePolicy
+        )
+      }
+      case "None" => {
+        println("##################  None ###############################\n")
+        LogisticRegressionWorkload_None(
+          input = input,
+          output = output,
+          saveMode = saveMode,
+          testFile = testFile,
+          numPartitions = numPartitions,
+          cachePolicy = cachePolicy
+        )
+      }
+      case _ => {
+        LogisticRegressionWorkload_None(
+          input = input,
+          output = output,
+          saveMode = saveMode,
+          testFile = testFile,
+          numPartitions = numPartitions,
+          cachePolicy = cachePolicy
+        )
+      }
+    }
+  }
 
 }
 
-case class LogisticRegressionWorkload(
+case class LogisticRegressionWorkload_All(
                                        input: Option[String],
                                        output: Option[String],
                                        saveMode: String,
                                        testFile: String,
                                        numPartitions: Int,
-                                       cacheEnabled: Boolean
+                                       cachePolicy: Option[String]
   ) extends Workload {
 
   private[ml] def load(filename: String)(implicit spark: SparkSession): DataFrame = {
     import spark.implicits._
-    spark.sparkContext.textFile(filename)
-      .map { line =>
-        val vv = line.split(',').map(_.toDouble)
-        val label = vv(0)
-        val features = Vectors.dense(vv.slice(1, vv.length)).toSparse
-        (label, features)
-      }.toDF("label", "features")
+    val input = spark.read.parquet(filename)
+
+    input.rdd.map(row => {
+      val label = row.getAs[Double]("label")
+      val features = Vectors.dense(row.getAs[org.apache.spark.mllib.linalg.Vector]("features").toArray).toSparse
+      LabeledPoint(label,features)
+    }).toDF("label", "features")
   }
 
   private[ml] def ld(fn: String)(implicit spark: SparkSession) = time {
     val ds = load(fn)(spark).repartition(numPartitions)
-    if (cacheEnabled) ds.cache
+    ds.cache()
+  }
+
+  override def doWorkload(df: Option[DataFrame], spark: SparkSession): DataFrame = {
+    val startTime = System.currentTimeMillis
+    val (ltrainTime, d_train) = ld(s"${input.get}")(spark)
+    val (ltestTime, d_test) = ld(s"$testFile")(spark)
+    val (countTime, (trainCount, testCount)) = time { (d_train.count(), d_test.count()) }
+    val (trainTime, model) = time(new LogisticRegression().setTol(1e-4).fit(d_train))
+    val (testTime, areaUnderROC) = time(new BCE().setMetricName("areaUnderROC").evaluate(model.transform(d_test)))
+
+    val loadTime = ltrainTime + ltestTime
+
+    //spark.createDataFrame(Seq(SleepResult("sleep", timestamp, t)))
+
+    spark.createDataFrame(Seq(LogisticRegressionResult(
+      name = "lr-bml",
+      appid = spark.sparkContext.applicationId,
+      startTime,
+      input.get,
+      train_count = trainCount,
+      trainTime,
+      testFile,
+      test_count = testCount,
+      testTime,
+      loadTime,
+      countTime,
+      loadTime + trainTime + testTime,
+      areaUnderROC
+    )))
+  }
+}
+
+case class LogisticRegressionWorkload_SODA(
+                                       input: Option[String],
+                                       output: Option[String],
+                                       saveMode: String,
+                                       testFile: String,
+                                       numPartitions: Int,
+                                       cachePolicy: Option[String]
+                                     ) extends Workload {
+
+  private[ml] def load(filename: String)(implicit spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    val input = spark.read.parquet(filename)
+
+    input.rdd.map(row => {
+      val label = row.getAs[Double]("label")
+      val features = Vectors.dense(row.getAs[org.apache.spark.mllib.linalg.Vector]("features").toArray).toSparse
+      LabeledPoint(label,features)
+    }).toDF("label", "features")
+  }
+
+  private[ml] def ld(fn: String)(implicit spark: SparkSession) = time {
+    val ds = load(fn)(spark).repartition(numPartitions)
+    if (fn.contains("logistic-regression.train.parquet")) ds.cache() else ds
+  }
+
+  override def doWorkload(df: Option[DataFrame], spark: SparkSession): DataFrame = {
+    val startTime = System.currentTimeMillis
+    val (ltrainTime, d_train) = ld(s"${input.get}")(spark)
+    val (ltestTime, d_test) = ld(s"$testFile")(spark)
+    val (countTime, (trainCount, testCount)) = time { (d_train.count(), d_test.count()) }
+    val (trainTime, model) = time(new LogisticRegression().setTol(1e-4).fit(d_train))
+    val (testTime, areaUnderROC) = time(new BCE().setMetricName("areaUnderROC").evaluate(model.transform(d_test)))
+
+    val loadTime = ltrainTime + ltestTime
+
+    //spark.createDataFrame(Seq(SleepResult("sleep", timestamp, t)))
+
+    spark.createDataFrame(Seq(LogisticRegressionResult(
+      name = "lr-bml",
+      appid = spark.sparkContext.applicationId,
+      startTime,
+      input.get,
+      train_count = trainCount,
+      trainTime,
+      testFile,
+      test_count = testCount,
+      testTime,
+      loadTime,
+      countTime,
+      loadTime + trainTime + testTime,
+      areaUnderROC
+    )))
+  }
+}
+
+
+case class LogisticRegressionWorkload_None(
+                                       input: Option[String],
+                                       output: Option[String],
+                                       saveMode: String,
+                                       testFile: String,
+                                       numPartitions: Int,
+                                       cachePolicy: Option[String]
+                                     ) extends Workload {
+
+  private[ml] def load(filename: String)(implicit spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    val input = spark.read.parquet(filename)
+
+    input.rdd.map(row => {
+      val label = row.getAs[Double]("label")
+      val features = Vectors.dense(row.getAs[org.apache.spark.mllib.linalg.Vector]("features").toArray).toSparse
+      LabeledPoint(label,features)
+    }).toDF("label", "features")
+  }
+
+  private[ml] def ld(fn: String)(implicit spark: SparkSession) = time {
+    val ds = load(fn)(spark).repartition(numPartitions)
     ds
   }
 
