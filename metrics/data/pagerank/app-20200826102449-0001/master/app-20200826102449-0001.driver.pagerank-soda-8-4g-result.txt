@@ -1,2 +1,0 @@
-AppName: pagerank-soda-8-4g, Runtime: 444164
-RDD Hit	3965	RDD Miss	2691	Disk Read	5306

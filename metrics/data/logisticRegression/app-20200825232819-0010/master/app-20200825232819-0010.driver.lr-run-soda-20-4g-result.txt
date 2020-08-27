@@ -1,2 +1,0 @@
-AppName: lr-run-soda-20-4g, Runtime: 572528
-RDD Hit	14000	RDD Miss	3000	Disk Read	0

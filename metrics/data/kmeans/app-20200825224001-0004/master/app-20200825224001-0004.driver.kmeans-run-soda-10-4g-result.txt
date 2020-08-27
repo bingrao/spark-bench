@@ -1,2 +1,0 @@
-AppName: kmeans-run-soda-10-4g, Runtime: 127822
-RDD Hit	2320	RDD Miss	80	Disk Read	0
